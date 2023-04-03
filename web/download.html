@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>下载文件</title>
+</head>
+<body>
+<form>
+    <label>URL：</label>
+    <input type="text" id="url" name="url"><br><br>
+    <button type="button" onclick="download()">下载</button><br><br>
+</form>
+<table id="fileTable">
+    <thead>
+    <tr>
+        <th>文件名</th>
+        <th>状态</th>
+        <th>进度</th>
+        <th>操作</th>
+    </tr>
+    </thead>
+    <tbody>
+    </tbody>
+</table>
+
+<script>
+    function getStatus() {
+        // 发送请求获取文件列表信息
+        downLoadProcessUrl = `${window.location.protocol}//${window.location.hostname}:8081/api/v1/downLoadProcess`
+        fetch(downLoadProcessUrl)
+            .then(response => response.json())
+            .then(data => {
+                const fileModels = data;
+                const tableBody = document.querySelector('#fileTable tbody');
+                tableBody.innerHTML = '';
+                for (const file of fileModels) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                    <td>${file.fileName}</td>
+                    <td>${getStatusText(file.status)}</td>
+                    <td>${getProgressText(file.progress)}</td>
+                    <td>
+                        <button type="button" onclick="stopDownload('${file.fileName}')">暂停</button>
+                        <button type="button" onclick="deleteFile('${file.fileName}')">删除</button>
+                    </td>
+                `;
+                    tableBody.appendChild(row);
+                }
+            });
+    }
+
+    function getProgressText(progressList) {
+        if (!progressList || progressList.length === 0) {
+            return '';
+        }
+        let percentage = 0;
+        let text = '<div>';
+        for (const progress of progressList) {
+            percentage += progress.progressInt;
+            text += `<div style="margin-bottom: 2px"><span style="display: inline-block; width: 120px">${progress.fileName}: </span><progress max="100" value="${progress.progressInt}" style="width: 200px"></progress></div>`;
+        }
+        text += `</div>`;
+        percentage = percentage / progressList.length
+        return `${percentage.toFixed(2)}%${text}`;
+    }
+
+    function getStatusText(status) {
+        switch (status) {
+            case 0:
+                return "下载中";
+            case 1:
+                return "已完成";
+            case 2:
+                return "下载失败";
+            default:
+                return "未知";
+        }
+    }
+
+    function download() {
+        const url = encodeURIComponent(document.querySelector('#url').value);
+        httpDownLoadUrl = `${window.location.protocol}//${window.location.hostname}:8081/api/v1/httpDownLoad?url=${url}`
+        fetch(httpDownLoadUrl)
+            .then(() => getStatus());
+    }
+
+    function stopDownload(fileName) {
+        stopDownLoadUrl = `${window.location.protocol}//${window.location.hostname}:8081/api/v1/stopDownLoad?fileName=${fileName}`
+        fetch(stopDownLoadUrl)
+            .then(() => getStatus());
+    }
+
+    function deleteFile(fileName) {
+        stopDownLoadUrl = `${window.location.protocol}//${window.location.hostname}:8081/api/v1/stopDownLoad?fileName=${fileName}`
+        fetch(stopDownLoadUrl)
+            .then(() => getStatus());
+    }
+
+    // 页面载入时立即获取初始状态
+    getStatus();
+
+    // 每隔5秒刷新状态
+    setInterval(getStatus, 5000);
+</script>
+</body>
+</html>
