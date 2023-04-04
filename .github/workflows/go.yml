@@ -23,7 +23,7 @@ jobs:
 
     - name: mod init
       run: |
-          go mod init httpDLM
+          go mod init http_download_manager
           go mod tidy
           go env -w GO111MODULE=on
           go get github.com/gin-gonic/gin
