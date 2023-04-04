@@ -13,8 +13,6 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    env: 
-        GOROOT: ./server/
     steps:
     - uses: actions/checkout@v3
 
@@ -28,6 +26,7 @@ jobs:
           go mod init httpDLM
           go mod tidy
           go get github.com/gin-gonic/gin
+          go env -w GO111MODULE=on
       
     - name: Build
       run: go build -v  -o httpDLM ./server/cmd/main.go
