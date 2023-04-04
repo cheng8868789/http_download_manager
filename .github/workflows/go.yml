@@ -29,5 +29,7 @@ jobs:
           go get github.com/gin-gonic/gin
       
     - name: Build
-      run: go build -v  -o httpDLM ./server/cmd/main.go
+      run: |
+        cd server 
+        go build -v  -o httpDLM cmd/main.go
 
