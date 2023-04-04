@@ -25,7 +25,8 @@ jobs:
       run: |
           go mod init httpDLM
           go mod tidy
-          go get github.com/gin-gonic/gin
+          go mod vendor
+          go get .
           go env -w GO111MODULE=on
       
     - name: Build
