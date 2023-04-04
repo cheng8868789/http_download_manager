@@ -27,6 +27,7 @@ jobs:
           go mod tidy
           go env -w GO111MODULE=on
           go get github.com/gin-gonic/gin
+          go mod vendor
       
     - name: Build
       run: |
