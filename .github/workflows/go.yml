@@ -26,7 +26,6 @@ jobs:
           go mod init httpDLM
           go mod tidy
           go mod vendor
-          go get .
           go env -w GO111MODULE=on
       
     - name: Build
