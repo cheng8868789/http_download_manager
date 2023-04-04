@@ -23,6 +23,8 @@ jobs:
 
     - name: mod init
       run: |
+          cd server
+          rm go.mod
           go env -w GO111MODULE=on
           go mod init http_download_manager
           go mod tidy
