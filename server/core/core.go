@@ -7,17 +7,14 @@ import (
 	"os"
 	"sort"
 	"sync"
-	"sync/atomic"
-	"time"
 )
 
 type fileModel struct {
-	FileName    string          `json:"fileName"` // 文件名称
-	URL         string          `json:"url"`      // 要下载文件的 URL 地址
-	FilePath    string          `json:"filePath"` // 下载完成后保存的相对路径
-	Status      int             `json:"status"`   //0-下载/1-成功/2-失败
-	Progress    []*fileProgress `json:"progress"`
-	DeleteCount int64           // 删除标记
+	FileName string          `json:"fileName"` // 文件名称
+	URL      string          `json:"url"`      // 要下载文件的 URL 地址
+	FilePath string          `json:"filePath"` // 下载完成后保存的相对路径
+	Status   int             `json:"status"`   //0-下载/1-成功/2-失败
+	Progress []*fileProgress `json:"progress"`
 	sync.RWMutex
 }
 
@@ -29,17 +26,6 @@ type fileProgress struct {
 	EndPos      int64  // 线程结束下载的位置
 	Percentage  float64
 	ProgressInt int `json:"progressInt"`
-}
-
-func (f *fileModel) delete() {
-	fmt.Println("file delete 1")
-	atomic.AddInt64(&f.DeleteCount, 1)
-}
-
-func (f *fileModel) getDelete() int64 {
-	f.RLock()
-	defer f.RUnlock()
-	return f.DeleteCount
 }
 
 func (f *fileModel) update(status int) {
@@ -54,29 +40,35 @@ type fileList struct {
 	sync.RWMutex
 }
 
-type fileCancelList struct {
-	FileCancelList map[string]context.CancelFunc
+type fileWG struct {
+	Wg     *sync.WaitGroup
+	Cancel context.CancelFunc
+}
+
+type fileWgList struct {
+	FileWgList map[string]*fileWG
 	sync.Mutex
 }
 
 var fl *fileList
-var fc *fileCancelList
+var fc *fileWgList
 
-func (fc *fileCancelList) add(key string, cancel context.CancelFunc) {
+func (fc *fileWgList) add(key string, fileWg *fileWG) {
 	fc.Lock()
 	defer fc.Unlock()
-	fc.FileCancelList[key] = cancel
+	fc.FileWgList[key] = fileWg
 }
 
-func (fc *fileCancelList) delete(key string) {
+func (fc *fileWgList) delete(key string) {
 	fc.Lock()
 	defer fc.Unlock()
-	cancel, exists := fc.FileCancelList[key]
+	cancel, exists := fc.FileWgList[key]
 	if !exists {
 		return
 	}
-	cancel()
-	delete(fc.FileCancelList, key)
+	cancel.Cancel()
+	cancel.Wg.Wait()
+	delete(fc.FileWgList, key)
 }
 
 func (fl *fileList) add(f *fileModel) {
@@ -116,8 +108,8 @@ func Init() error {
 	coreCount = 32
 	fl = &fileList{}
 	fl.FileListMap = make(map[string]*fileModel)
-	fc = &fileCancelList{}
-	fc.FileCancelList = make(map[string]context.CancelFunc)
+	fc = &fileWgList{}
+	fc.FileWgList = make(map[string]*fileWG)
 	//读取download文件夹下的文件目录，初始化文件列表信息
 	dir, err := os.Open("./../download")
 	if err != nil {
@@ -169,14 +161,7 @@ func StopDownLoad(fileName string) error {
 		return deleteFile(fileName)
 	case 0:
 		fc.delete(fileName)
-		for {
-			if file.getDelete() == int64(coreCount+1) {
-				time.Sleep(time.Second)
-				return deleteFile(fileName)
-			} else {
-				continue
-			}
-		}
+		return deleteFile(fileName)
 	default:
 		return nil
 	}

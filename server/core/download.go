@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"strconv"
@@ -47,7 +48,6 @@ func singleThreadDownload(thread *fileProgress, wg *sync.WaitGroup, mu *sync.Mut
 	for {
 		select {
 		case <-ctx.Done():
-			fl.get(thread.FileName).delete()
 			fmt.Println("singleThreadDownload Context done:", ctx.Err())
 			return
 		default:
@@ -58,7 +58,6 @@ func singleThreadDownload(thread *fileProgress, wg *sync.WaitGroup, mu *sync.Mut
 				return
 			}
 			if n == 0 {
-				fl.get(thread.FileName).delete()
 				break
 			}
 			mu.Lock()
@@ -77,10 +76,41 @@ func singleThreadDownload(thread *fileProgress, wg *sync.WaitGroup, mu *sync.Mut
 	}
 }
 
+func getFileName(url string) string {
+	response, err := http.Head(url)
+	if err != nil {
+		// handle error
+		return ""
+	}
+	defer response.Body.Close()
+
+	contentDisposition := response.Header.Get("Content-Disposition")
+	filename := ""
+	if contentDisposition != "" {
+		_, params, err := mime.ParseMediaType(contentDisposition)
+		if err == nil {
+			filename = params["filename"]
+		}
+	}
+	// 请求头中获取不到
+	if filename == "" {
+		// 先判断url中是否带请求参数
+		if strings.Contains(url, "?") {
+			url = url[:strings.Index(url, "?")]
+		}
+		filename = url[strings.LastIndex(url, "/")+1:]
+	}
+	return filename
+}
+
 // 主要逻辑
 func DownLoad(url string) {
 	// 获取文件名称
-	baseName := url[strings.LastIndex(url, "/")+1:]
+	baseName := getFileName(url)
+	if baseName == "" {
+		fmt.Println("获取文件名失败")
+		return
+	}
 	fileName := baseName
 	existsCount := 0
 	// 判断文件是否已经存在,如果存在则在名字后面加序号
@@ -93,11 +123,10 @@ func DownLoad(url string) {
 	path := basePath + "/" + fileName
 	// 创建文件对象
 	file := &fileModel{
-		FileName:    fileName,
-		URL:         url,
-		FilePath:    path,
-		Status:      0,
-		DeleteCount: 0,
+		FileName: fileName,
+		URL:      url,
+		FilePath: path,
+		Status:   0,
 	}
 	// 获取文件大小
 	resp, err := http.Head(url)
@@ -142,7 +171,11 @@ func DownLoad(url string) {
 		go singleThreadDownload(downloadThreads[i], &wg, &mu, ctx)
 	}
 	file.Progress = downloadThreads
-	fc.add(file.FileName, cancel)
+	fileWg := &fileWG{
+		&wg,
+		cancel,
+	}
+	fc.add(file.FileName, fileWg)
 	// 存入文件队列
 	fl.add(file)
 	wg.Add(1)
@@ -154,18 +187,15 @@ func DownLoad(url string) {
 func fileSuccess(file *fileModel, wg *sync.WaitGroup, ctx context.Context) {
 	defer wg.Done()
 	timer := time.NewTicker(1 * time.Second)
-	fmt.Println("indeed 1")
 	for {
 		select {
 		case <-ctx.Done():
-			file.delete()
 			fmt.Println("fileSuccess Context done:", ctx.Err())
 			return
 		case <-timer.C:
 			file.RLock()
 			defer file.RUnlock()
 			if file.Status != 2 {
-				fmt.Println("indeed 2")
 				if file.Progress != nil && len(file.Progress) > 0 {
 					clearFlag := true
 					for _, fileProgress := range file.Progress {
@@ -174,7 +204,6 @@ func fileSuccess(file *fileModel, wg *sync.WaitGroup, ctx context.Context) {
 						}
 					}
 					if clearFlag {
-						fmt.Println("indeed 3")
 						file.Progress = nil
 						file.Status = 1
 						fmt.Println(file.FileName + " download success")
@@ -183,7 +212,6 @@ func fileSuccess(file *fileModel, wg *sync.WaitGroup, ctx context.Context) {
 					}
 				}
 			} else {
-				fmt.Println("indeed 4")
 				fc.delete(file.FileName)
 				return
 			}
